@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tracker de corte</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f0f0e; --surface: #1a1a18; --surface-2: #242422;
+    --border: rgba(255,255,255,0.10); --border-strong: rgba(255,255,255,0.18);
+    --text: #ededec; --text-dim: #8a8a85;
+    --blue: #378ADD; --coral: #D85A30; --green: #97C459; --red: #E24B4A; --amber: #EF9F27;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f7f6f2; --surface: #ffffff; --surface-2: #f1efe8;
+      --border: rgba(0,0,0,0.10); --border-strong: rgba(0,0,0,0.18);
+      --text: #1a1a18; --text-dim: #6b6b66;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    line-height: 1.5; padding: 24px 16px 60px; max-width: 860px; margin: 0 auto;
+  }
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
+  .sub { color: var(--text-dim); font-size: 14px; margin-bottom: 20px; }
+
+  .sync-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--surface-2); border-radius: 8px; padding: 10px 14px; margin-bottom: 22px;
+    font-size: 13px; color: var(--text-dim);
+  }
+  .sync-status { display: flex; align-items: center; gap: 7px; }
+  .sdot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-dim); }
+  .sdot.ok { background: var(--green); }
+  .sdot.err { background: var(--red); }
+  .sdot.busy { background: var(--amber); }
+  .sync-bar .spacer { flex: 1; }
+
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 24px; }
+  .metric { background: var(--surface-2); border-radius: 8px; padding: 14px 16px; }
+  .metric .label { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  .metric .value { font-size: 21px; font-weight: 500; }
+  .metric .vsub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+  .legend { display: flex; gap: 18px; margin-bottom: 12px; flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+  .dot { width: 10px; height: 10px; border-radius: 2px; }
+  .dash { width: 14px; height: 3px; border-radius: 1px; }
+
+  .chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 28px; position: relative; height: 340px; }
+  .section-title { font-size: 16px; font-weight: 500; margin-bottom: 12px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  thead th { text-align: left; color: var(--text-dim); font-weight: 500; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.03em; }
+  tbody td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  tbody tr:hover { background: var(--surface-2); }
+  input[type="number"], input[type="text"], input[type="password"] {
+    background: transparent; border: 1px solid transparent; color: var(--text);
+    font: inherit; padding: 6px 8px; border-radius: 6px; width: 100%;
+    transition: border-color .15s, background .15s;
+  }
+  input:hover { border-color: var(--border); }
+  input:focus { outline: none; border-color: var(--blue); background: var(--surface-2); }
+  td.daycol { color: var(--text-dim); width: 56px; padding-left: 10px; font-variant-numeric: tabular-nums; }
+  td.delcol { width: 40px; text-align: center; }
+  .del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px; padding: 4px 8px; border-radius: 6px; line-height: 1; }
+  .del:hover { color: var(--red); background: var(--surface-2); }
+
+  .actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  button.btn { background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text); font: inherit; font-size: 14px; padding: 9px 16px; border-radius: 8px; cursor: pointer; transition: background .15s, transform .05s; }
+  button.btn:hover { background: var(--border); }
+  button.btn:active { transform: scale(0.98); }
+  button.btn.primary { border-color: var(--blue); }
+
+  .table-scroll { max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+  .hint { font-size: 12px; color: var(--text-dim); margin-top: 10px; }
+
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 50; }
+  .modal-bg.show { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; padding: 24px; max-width: 440px; width: 100%; }
+  .modal h2 { font-size: 18px; font-weight: 500; margin-bottom: 6px; }
+  .modal p { font-size: 13px; color: var(--text-dim); margin-bottom: 16px; }
+  .modal label { display: block; font-size: 13px; margin-bottom: 5px; margin-top: 12px; }
+  .modal input { border: 1px solid var(--border-strong); background: var(--surface-2); }
+  .modal .row { display: flex; gap: 10px; margin-top: 20px; }
+</style>
+</head>
+<body>
+
+<h1>Tracker de corte</h1>
+<p class="sub">Escribí el peso de cada día. Sincroniza solo entre todos tus dispositivos.</p>
+
+<div class="sync-bar">
+  <div class="sync-status"><span class="sdot" id="sdot"></span><span id="syncText">Sin configurar</span></div>
+  <span class="spacer"></span>
+  <button class="btn" style="padding:6px 12px;font-size:13px" onclick="openConfig()">Configurar nube</button>
+  <button class="btn" style="padding:6px 12px;font-size:13px" onclick="pullNow()">Refrescar</button>
+</div>
+
+<div class="metrics" id="metrics"></div>
+
+<div class="legend">
+  <span><span class="dot" style="background:var(--blue)"></span>peso diario</span>
+  <span><span class="dash" style="background:var(--coral)"></span>promedio móvil 7d</span>
+</div>
+
+<div class="chart-wrap"><canvas id="chart"></canvas></div>
+
+<div class="section-title">Datos</div>
+<div class="table-scroll">
+  <table>
+    <thead><tr><th class="daycol" style="text-transform:none">Día</th><th>Peso (kg)</th><th>Kcal</th><th>Nota</th><th></th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<div class="actions">
+  <button class="btn primary" onclick="addRow()">+ Agregar día</button>
+  <button class="btn" onclick="exportData()">Exportar JSON</button>
+  <button class="btn" onclick="importData()">Importar JSON</button>
+</div>
+<p class="hint">Los cambios se guardan local al instante y se suben a la nube ~1.5s después de dejar de escribir.</p>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h2>Configurar sincronización</h2>
+    <p>Pegá tu Access Key y Bin ID de JSONBin. Se guardan solo en este navegador, nunca se comparten.</p>
+    <label>Access Key (X-Access-Key)</label>
+    <input type="password" id="cfgKey" placeholder="$2a$10$...">
+    <label>Bin ID</label>
+    <input type="text" id="cfgBin" placeholder="6a31cc4c...">
+    <div class="row">
+      <button class="btn primary" style="flex:1" onclick="saveConfig()">Guardar y sincronizar</button>
+      <button class="btn" onclick="closeConfig()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const LOCAL = 'tracker-corte-v2';
+const CFG = 'tracker-corte-cfg';
+
+let rows = [];
+let cfg = loadCfg();
+let pushTimer = null;
+
+function loadCfg() {
+  try { return JSON.parse(localStorage.getItem(CFG)) || {}; } catch(e) { return {}; }
+}
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(LOCAL);
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return seed();
+}
+function saveLocal() { try { localStorage.setItem(LOCAL, JSON.stringify(rows)); } catch(e) {} }
+
+function seed() {
+  const data = [
+    [1,80.0,2485,''],[2,78.6,2485,''],[3,null,2485,''],[4,78.8,2485,''],[5,null,2485,''],
+    [6,null,2485,''],[7,null,2485,''],[8,null,2485,''],[9,null,2485,''],[10,null,2485,''],
+    [11,null,2485,''],[12,null,2485,''],[13,null,2485,''],[14,78.1,2485,''],[15,77.5,2785,''],
+    [16,77.9,2485,''],[17,77.4,2485,''],[18,77.4,2685,''],[19,77.0,2585,''],[20,77.5,2485,''],
+    [21,77.3,2485,''],[22,77.0,2485,''],[23,77.2,2585,''],[24,77.2,2585,''],[25,77.1,2785,''],
+    [26,77.3,2485,''],[27,77.2,2485,''],[28,78.0,2485,''],[29,77.0,2395,''],[30,76.6,2395,''],
+    [31,77.0,2395,''],[32,77.1,2395,''],[33,78.1,2395,''],[34,null,2395,''],[35,77.4,3000,''],
+    [36,77.2,2270,''],[37,77.0,2395,''],[38,null,2600,''],[39,null,2600,''],[40,77.2,2600,''],
+    [41,78.4,2600,''],[42,null,2600,''],[43,null,2270,''],[44,null,2270,''],[45,null,2270,''],
+    [46,null,2270,''],[47,78.0,2270,''],[48,77.3,2270,''],[49,77.0,2270,''],[50,77.3,2270,''],
+    [51,76.4,2270,''],[52,76.5,2270,''],[53,null,2270,''],[54,77.1,2270,''],[55,77.0,2270,''],
+    [56,77.0,2270,''],[57,76.5,2270,''],[58,76.7,2270,''],[59,77.2,2270,''],[60,76.6,2270,''],
+    [61,76.5,2270,''],[62,76.2,2500,''],[63,75.9,2270,''],[64,76.3,2500,''],[65,76.6,2270,''],
+    [66,76.3,2270,''],[67,76.0,2370,''],[68,76.1,2270,''],[69,75.8,2580,''],[70,76.3,2270,''],
+    [71,75.7,2330,''],[72,76.0,2270,''],[73,76.2,2270,''],[74,75.5,2270,''],[75,75.5,3200,''],
+    [76,75.7,3000,''],[77,75.9,2570,''],[78,75.6,2270,''],[79,75.3,2470,'']
+  ];
+  return data.map(([d,bw,kcal,note]) => ({d,bw,kcal,note}));
+}
+
+function setStatus(state, text) {
+  const dot = document.getElementById('sdot');
+  dot.className = 'sdot' + (state ? ' ' + state : '');
+  document.getElementById('syncText').textContent = text;
+}
+
+const BASE = 'https://api.jsonbin.io/v3/b/';
+
+async function pull() {
+  if (!cfg.key || !cfg.bin) { setStatus('', 'Sin configurar'); return; }
+  setStatus('busy', 'Sincronizando…');
+  try {
+    const res = await fetch(BASE + cfg.bin + '/latest', { headers: { 'X-Access-Key': cfg.key } });
+    if (!res.ok) throw new Error(res.status);
+    const json = await res.json();
+    const remote = json.record && Array.isArray(json.record.rows) ? json.record.rows : null;
+    if (remote && remote.length) { rows = remote; saveLocal(); renderAll(); }
+    setStatus('ok', 'Sincronizado');
+  } catch(e) {
+    setStatus('err', 'Error al leer (revisá key/bin)');
+  }
+}
+
+async function push() {
+  if (!cfg.key || !cfg.bin) return;
+  setStatus('busy', 'Guardando en nube…');
+  try {
+    const res = await fetch(BASE + cfg.bin, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Access-Key': cfg.key },
+      body: JSON.stringify({ rows })
+    });
+    if (!res.ok) throw new Error(res.status);
+    setStatus('ok', 'Sincronizado');
+  } catch(e) {
+    setStatus('err', 'Error al guardar');
+  }
+}
+
+function schedulePush() {
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = setTimeout(push, 1500);
+}
+
+function pullNow() { pull(); }
+
+function openConfig() {
+  document.getElementById('cfgKey').value = cfg.key || '';
+  document.getElementById('cfgBin').value = cfg.bin || '';
+  document.getElementById('modalBg').classList.add('show');
+}
+function closeConfig() { document.getElementById('modalBg').classList.remove('show'); }
+function saveConfig() {
+  cfg = {
+    key: document.getElementById('cfgKey').value.trim(),
+    bin: document.getElementById('cfgBin').value.trim()
+  };
+  localStorage.setItem(CFG, JSON.stringify(cfg));
+  closeConfig();
+  pull();
+}
+
+function renderTable() {
+  const tb = document.getElementById('tbody');
+  tb.innerHTML = '';
+  rows.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="daycol">' + r.d + '</td>' +
+      '<td><input type="number" step="0.1" value="' + (r.bw ?? '') + '" data-i="' + i + '" data-k="bw" placeholder="—"></td>' +
+      '<td><input type="number" step="10" value="' + (r.kcal ?? '') + '" data-i="' + i + '" data-k="kcal" placeholder="—"></td>' +
+      '<td><input type="text" value="' + (r.note ?? '').replace(/"/g,'&quot;') + '" data-i="' + i + '" data-k="note"></td>' +
+      '<td class="delcol"><button class="del" data-del="' + i + '" title="Borrar">×</button></td>';
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const i = +inp.dataset.i, k = inp.dataset.k;
+      if (k === 'bw' || k === 'kcal') rows[i][k] = inp.value === '' ? null : parseFloat(inp.value);
+      else rows[i][k] = inp.value;
+      saveLocal(); renderChart(); renderMetrics(); schedulePush();
+    });
+  });
+  tb.querySelectorAll('.del').forEach(b => {
+    b.addEventListener('click', () => {
+      rows.splice(+b.dataset.del, 1);
+      saveLocal(); renderTable(); renderChart(); renderMetrics(); schedulePush();
+    });
+  });
+}
+
+function addRow() {
+  const lastDay = rows.length ? rows[rows.length-1].d : 0;
+  rows.push({d: lastDay + 1, bw: null, kcal: null, note: ''});
+  saveLocal(); renderTable(); renderChart(); renderMetrics(); schedulePush();
+  const scroll = document.querySelector('.table-scroll');
+  scroll.scrollTop = scroll.scrollHeight;
+}
+
+function filledPoints() { return rows.filter(r => r.bw != null && !isNaN(r.bw)).map(r => ({x: r.d, y: r.bw})); }
+function movingAvg(pts, win) {
+  return pts.map((pt, i) => {
+    const slice = pts.slice(Math.max(0, i - win + 1), i + 1);
+    return {x: pt.x, y: Math.round(slice.reduce((s,p)=>s+p.y,0)/slice.length*100)/100};
+  });
+}
+
+function renderMetrics() {
+  const pts = filledPoints();
+  const m = document.getElementById('metrics');
+  if (!pts.length) { m.innerHTML = ''; return; }
+  const first = pts[0].y, last = pts[pts.length-1].y, diff = last - first;
+  const lastDay = pts[pts.length-1].x, firstDay = pts[0].x;
+  const perWeek = diff / Math.max((lastDay - firstDay) / 7, 0.1);
+  const card = (l,v,s) => '<div class="metric"><div class="label">'+l+'</div><div class="value">'+v+'</div><div class="vsub">'+s+'</div></div>';
+  m.innerHTML =
+    card('Peso inicial', first.toFixed(1)+' kg', 'Día '+firstDay) +
+    card('Peso actual', last.toFixed(1)+' kg', 'Día '+lastDay) +
+    card('Cambio total', (diff>=0?'+':'')+diff.toFixed(1)+' kg', (lastDay-firstDay)+' días') +
+    card('Por semana', (perWeek>=0?'+':'')+perWeek.toFixed(2)+' kg', 'ritmo');
+}
+
+let chart;
+function renderChart() {
+  const pts = filledPoints(), mavg = movingAvg(pts, 7);
+  const cfgC = {
+    type: 'scatter',
+    data: { datasets: [
+      { label:'Peso diario', data:pts, backgroundColor:'#378ADD', pointRadius:4, pointHoverRadius:6, showLine:false, order:2 },
+      { label:'Promedio 7d', data:mavg, borderColor:'#D85A30', backgroundColor:'transparent', pointRadius:0, showLine:true, borderWidth:2, tension:0.3, order:1 }
+    ]},
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y.toFixed(1)+' kg'}} },
+      scales:{
+        x:{ type:'linear', title:{display:true,text:'día',color:'#8a8a85'}, ticks:{color:'#8a8a85'}, grid:{color:'rgba(136,135,128,0.15)'} },
+        y:{ ticks:{color:'#8a8a85', callback:v=>v.toFixed(1)+' kg'}, grid:{color:'rgba(136,135,128,0.15)'} }
+      }
+    }
+  };
+  if (chart) { chart.data = cfgC.data; chart.update(); }
+  else chart = new Chart(document.getElementById('chart'), cfgC);
+}
+
+function renderAll() { renderTable(); renderChart(); renderMetrics(); }
+
+function exportData() {
+  const blob = new Blob([JSON.stringify(rows,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'corte-datos.json'; a.click();
+}
+function importData() {
+  const inp = document.createElement('input');
+  inp.type='file'; inp.accept='.json';
+  inp.onchange = e => {
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = () => { try { rows = JSON.parse(r.result); saveLocal(); renderAll(); schedulePush(); } catch(err){ alert('Archivo inválido'); } };
+    r.readAsText(f);
+  };
+  inp.click();
+}
+
+rows = loadLocal();
+renderAll();
+if (cfg.key && cfg.bin) pull();
+else setStatus('', 'Sin configurar — tocá "Configurar nube"');
+</script>
+</body>
+</html>
