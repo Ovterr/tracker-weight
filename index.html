@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tracker de gym</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f0f0e; --surface: #1a1a18; --surface-2: #242422;
+    --border: rgba(255,255,255,0.10); --border-strong: rgba(255,255,255,0.18);
+    --text: #ededec; --text-dim: #8a8a85;
+    --blue: #378ADD; --coral: #D85A30; --green: #97C459; --red: #E24B4A; --amber: #EF9F27; --teal: #1D9E75; --purple: #9B7EDE;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f7f6f2; --surface: #ffffff; --surface-2: #f1efe8;
+      --border: rgba(0,0,0,0.10); --border-strong: rgba(0,0,0,0.18);
+      --text: #1a1a18; --text-dim: #6b6b66;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    line-height: 1.5; padding: 24px 16px 60px; max-width: 880px; margin: 0 auto;
+  }
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
+  .sub { color: var(--text-dim); font-size: 14px; margin-bottom: 20px; }
+
+  .sync-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--surface-2); border-radius: 8px; padding: 10px 14px; margin-bottom: 18px; font-size: 13px; color: var(--text-dim); }
+  .sync-status { display: flex; align-items: center; gap: 7px; }
+  .sdot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-dim); }
+  .sdot.ok { background: var(--green); } .sdot.err { background: var(--red); } .sdot.busy { background: var(--amber); }
+  .sync-bar .spacer { flex: 1; }
+
+  .tabs { display: flex; gap: 4px; background: var(--surface-2); border-radius: 10px; padding: 4px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
+  .tab { padding: 9px 14px; border-radius: 7px; font-size: 14px; cursor: pointer; color: var(--text-dim); user-select: none; transition: background .15s, color .15s; white-space: nowrap; }
+  .tab.active { background: var(--surface); color: var(--text); font-weight: 500; }
+  .tab .phase-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .tab-restore { padding: 6px 10px; border-radius: 7px; font-size: 12px; cursor: pointer; color: var(--text-dim); border: 1px dashed var(--border-strong); background: transparent; user-select: none; white-space: nowrap; }
+  .tab-restore:hover { color: var(--text); border-color: var(--text-dim); }
+  .tab-add { padding: 6px 12px; border-radius: 7px; font-size: 16px; line-height: 1; cursor: pointer; color: var(--text-dim); border: 1px dashed var(--border-strong); background: transparent; }
+  .tab-add:hover { color: var(--text); border-color: var(--text-dim); }
+  .tabs-hint { font-size: 11px; color: var(--text-dim); margin-bottom: 20px; }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .metric { background: var(--surface-2); border-radius: 8px; padding: 14px 16px; }
+  .metric .label { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  .metric .value { font-size: 21px; font-weight: 500; }
+  .metric .vsub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+  .goal-banner { background: var(--surface-2); border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; font-size: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .goal-banner .tag { color: #04342C; font-size: 12px; font-weight: 500; padding: 3px 9px; border-radius: 6px; background: var(--teal); }
+
+  .legend { display: flex; gap: 18px; margin-bottom: 12px; flex-wrap: wrap; }
+  .legend span.item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+  .dot { width: 10px; height: 10px; border-radius: 2px; }
+  .dash { width: 14px; height: 3px; border-radius: 1px; }
+
+  .chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 24px; position: relative; height: 340px; }
+  .section-title { font-size: 16px; font-weight: 500; margin-bottom: 12px; }
+
+  .weekly-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 28px; }
+  .weekly-table th { text-align: left; color: var(--text-dim); font-weight: 500; font-size: 11px; padding: 7px 12px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.03em; }
+  .weekly-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  .weekly-table .down { color: var(--green); } .weekly-table .up { color: var(--red); }
+
+  table.data { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.data thead th { text-align: left; color: var(--text-dim); font-weight: 500; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.03em; }
+  table.data tbody td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  table.data tbody tr:hover { background: var(--surface-2); }
+  table.data tbody tr.is-extreme td { background: rgba(151,196,89,0.08); }
+  input[type="number"], input[type="text"], input[type="password"], input[type="date"], select { background: transparent; border: 1px solid transparent; color: var(--text); font: inherit; padding: 6px 8px; border-radius: 6px; width: 100%; transition: border-color .15s, background .15s; }
+  input:hover, select:hover { border-color: var(--border); }
+  input:focus, select:focus { outline: none; border-color: var(--blue); background: var(--surface-2); }
+  td.daycol { color: var(--text-dim); width: 64px; padding-left: 10px; font-variant-numeric: tabular-nums; }
+  td.daycol .star { color: var(--green); margin-left: 4px; }
+  td.delcol { width: 40px; text-align: center; }
+  .del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px; padding: 4px 8px; border-radius: 6px; line-height: 1; }
+  .del:hover { color: var(--red); background: var(--surface-2); }
+
+  .actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  button.btn { background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text); font: inherit; font-size: 14px; padding: 9px 16px; border-radius: 8px; cursor: pointer; transition: background .15s, transform .05s; }
+  button.btn:hover { background: var(--border); }
+  button.btn:active { transform: scale(0.98); }
+  button.btn.primary { border-color: var(--blue); }
+  button.btn.danger { border-color: var(--red); color: var(--red); }
+  button.btn.mini { padding: 6px 10px; font-size: 12px; }
+
+  .table-scroll { max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+  .hint { font-size: 12px; color: var(--text-dim); margin-top: 10px; }
+  .goal-input { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 13px; color: var(--text-dim); flex-wrap: wrap; }
+  .goal-input input { width: 70px; border: 1px solid var(--border-strong); background: var(--surface-2); }
+  .goal-input select { width: auto; border: 1px solid var(--border-strong); background: var(--surface-2); }
+
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 50; }
+  .modal-bg.show { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; padding: 24px; max-width: 440px; width: 100%; }
+  .modal h2 { font-size: 18px; font-weight: 500; margin-bottom: 6px; }
+  .modal p { font-size: 13px; color: var(--text-dim); margin-bottom: 16px; }
+  .modal label { display: block; font-size: 13px; margin-bottom: 5px; margin-top: 12px; }
+  .modal input, .modal select { border: 1px solid var(--border-strong); background: var(--surface-2); }
+  .modal .row { display: flex; gap: 10px; margin-top: 20px; }
+
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text); padding: 10px 18px; border-radius: 8px; font-size: 13px; z-index: 100; display: none; }
+</style>
+</head>
+<body>
+
+<h1>Tracker de gym</h1>
+<p class="sub">Déficit, volumen y las fases que quieras, todo en un solo lugar. Sincroniza entre todos tus dispositivos.</p>
+
+<div class="sync-bar">
+  <div class="sync-status"><span class="sdot" id="sdot"></span><span id="syncText">Sin configurar</span></div>
+  <span class="spacer"></span>
+  <button class="btn" style="padding:6px 12px;font-size:13px" onclick="openConfig()">Configurar nube</button>
+  <button class="btn" style="padding:6px 12px;font-size:13px" onclick="pullNow()">Refrescar</button>
+</div>
+
+<div class="tabs" id="tabsBar"></div>
+<p class="tabs-hint">Doble click en una pestaña para ocultarla (los datos quedan guardados). "+" agrega una fase nueva (ej: "Déficit 2").</p>
+
+<div id="phaseViews"></div>
+
+<!-- ===== GENERAL VIEW ===== -->
+<div class="view" id="view-general">
+  <div class="metrics" id="metrics-general"></div>
+  <div class="goal-banner" id="banner-general"></div>
+  <div class="legend" id="legend-general"></div>
+  <div class="chart-wrap"><canvas id="chart-general"></canvas></div>
+  <div class="section-title">Resumen por semana (todo el historial)</div>
+  <table class="weekly-table" id="weeklyTable-general"></table>
+</div>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal" id="modalBody"></div>
+</div>
+
+<div class="toast" id="toastMsg"></div>
+
+<script>
+const LOCAL_KEY = 'tracker-gym-v3';
+const CFG = 'tracker-gym-cfg';
+const DOW = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
+const PALETTE = ['#1D9E75','#9B7EDE','#378ADD','#D85A30','#EF9F27','#E24B4A','#4EC9B0','#C77DFF'];
+const DIR_LABEL = { superavit: 'Superávit', mantenimiento: 'Mantenimiento', deficit: 'Déficit' };
+
+let cfg = loadCfg();
+let activeTab = 'deficit';
+let pushTimer = null;
+let charts = {};
+
+function toast(msg) {
+  const el = document.getElementById('toastMsg');
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+function seedDeficit() {
+  const data = [
+    [1,80,2485,''],[2,78.6,2485,''],[3,null,2485,''],[4,78.8,2485,''],[5,null,2485,''],
+    [6,null,2485,''],[7,null,2485,''],[8,null,2485,''],[9,null,2485,''],[10,null,2485,''],
+    [11,null,2485,''],[12,null,2485,''],[13,null,2485,''],[14,78.1,2485,''],[15,77.5,2785,''],
+    [16,77.9,2485,''],[17,77.4,2485,''],[18,77.4,2685,''],[19,77,2585,''],[20,77.5,2485,''],
+    [21,77.3,2485,''],[22,77,2485,''],[23,77.2,2585,''],[24,77.2,2585,''],[25,77.1,2785,''],
+    [26,77.3,2485,''],[27,77.2,2485,''],[28,78,2485,''],[29,77,2395,''],[30,76.6,2395,''],
+    [31,77,2395,''],[32,77.1,2395,''],[33,78.1,2395,''],[34,null,2395,''],[35,77.4,3000,''],
+    [36,77.2,2270,''],[37,77,2395,''],[38,null,2600,''],[39,null,2600,''],[40,77.2,2600,''],
+    [41,78.4,2600,''],[42,null,2600,''],[43,null,2270,''],[44,null,2270,''],[45,null,2270,''],
+    [46,null,2270,''],[47,78,2270,''],[48,77.3,2270,''],[49,77,2270,''],[50,77.3,2270,''],
+    [51,76.4,2270,''],[52,76.5,2270,''],[53,null,2270,''],[54,77.1,2270,''],[55,77,2270,''],
+    [56,77,2270,''],[57,76.5,2270,''],[58,76.7,2270,''],[59,77.2,2270,''],[60,76.6,2270,''],
+    [61,76.5,2270,''],[62,76.2,2500,''],[63,75.9,2270,''],[64,76.3,2500,''],[65,76.6,2270,''],
+    [66,76.3,2270,''],[67,76,2370,''],[68,76.1,2270,''],[69,75.8,2580,''],[70,76.3,2270,''],
+    [71,75.7,2330,''],[72,76,2270,''],[73,76.2,2270,''],[74,75.5,2270,''],[75,75.5,3200,''],
+    [76,75.7,3000,''],[77,75.9,2570,''],[78,75.6,2270,''],[79,75.3,2470,''],[80,75.4,2470,''],
+    [81,75.6,2370,''],[82,75.9,3200,''],[83,76,2270,''],[84,75.6,2500,'< -cardio (+3000kcal)'],[85,74.9,2270,''],
+    [86,75,2570,''],[87,75.5,2370,''],[88,75.3,2570,''],[89,75.1,2370,''],[90,74.8,3200,''],
+    [91,75.1,2270,''],[92,74.8,2270,''],[93,74.8,2270,''],[94,75,2270,''],[95,74.7,2490,''],
+    [96,74.3,3600,''],[97,74.7,2670,'dia 1 brocoli'],[98,75.8,2270,'inflamacion brocoli'],[99,75.7,2370,'inflamacion brocoli'],[100,74.7,2670,'quité el brocoli'],
+    [101,75,2300,''],[102,74.6,2270,''],[103,74.1,2900,''],[104,74.4,2500,''],[105,74.2,2270,''],
+    [106,73.8,2600,''],[107,74.3,2370,''],[108,74,2270,''],[109,73.8,2370,''],[110,73.8,4600,''],
+    [111,74.2,2370,''],[112,74.4,null,''],[113,73.7,2470,''],[114,73.2,2470,''],[115,73.1,2500,'credencial'],
+    [116,73.4,2900,'No cardio'],[117,73.7,2370,''],[118,73.7,3000,''],[119,73.9,2500,''],[120,74,2370,''],
+    [121,73.9,2270,''],[122,73.9,2320,''],[123,73.7,2400,'< -cardio (+2700kcal)'],[124,73.9,3100,''],[125,74.5,3200,''],
+    [126,75.7,2370,''],[127,null,2270,''],[128,74.4,2500,'no cardio'],[129,74.4,2270,'no cardio'],[130,73.9,2470,''],
+    [131,74.4,2370,''],[132,74,2470,''],[133,74.2,3000,''],[134,75,2470,''],[135,74.4,2300,''],
+    [136,73.6,2370,''],[137,73.9,2570,''],[138,74.1,3200,''],[139,null,2000,''],[140,74.2,2550,''],
+    [141,74.4,2240,''],[142,74,2205,''],[143,73.9,2300,''],[144,73.7,2350,''],[145,73.4,2150,''],
+    [146,73.5,3145,''],[147,73.5,2345,''],[148,73.6,2400,'no steps'],[149,74.1,2245,'no training, no steps'],[150,73.1,2345,''],
+    [151,73.5,2445,''],[152,73.2,4000,''],[153,75.1,1830,''],[154,74.6,1830,''],[155,73.8,2445,''],
+    [156,74.1,2217,''],[157,73.2,2300,''],[158,73.5,2400,''],[159,null,2250,''],[160,73.3,2250,''],
+    [161,73.2,2400,''],[162,null,null,'']
+  ];
+  return data.map(([d,bw,kcal,note]) => ({d,bw,kcal,note}));
+}
+
+function defaultState() {
+  return {
+    phases: [
+      { id: 'deficit', name: 'Déficit', rows: seedDeficit(), goal: 70, tday: 369, startDate: '', endDate: '', hidden: false, direction: 'deficit', color: PALETTE[0] },
+      { id: 'volumen', name: 'Volumen', rows: [], goal: 80, tday: 501, startDate: '', endDate: '', hidden: false, direction: 'superavit', color: PALETTE[1] }
+    ]
+  };
+}
+
+function normalizeDirection(d) {
+  if (d === 'deficit' || d === 'mantenimiento' || d === 'superavit') return d;
+  if (d === 'down') return 'deficit';
+  if (d === 'up') return 'superavit';
+  return 'deficit';
+}
+
+// Normalizes state: fills missing fields, migrates the old {deficit:{...},volumen:{...}} shape to the new phases array.
+function ensureShape(s) {
+  if (s && Array.isArray(s.phases)) {
+    s.phases.forEach((p, i) => {
+      if (!p.id) p.id = 'p_' + Date.now() + '_' + i;
+      if (!p.name) p.name = 'Fase ' + (i + 1);
+      if (!Array.isArray(p.rows)) p.rows = [];
+      if (typeof p.goal !== 'number') p.goal = 70;
+      if (typeof p.tday !== 'number') p.tday = 1;
+      if (p.startDate === undefined) p.startDate = '';
+      if (p.endDate === undefined) p.endDate = '';
+      if (p.hidden === undefined) p.hidden = false;
+      p.direction = normalizeDirection(p.direction);
+      if (!p.color) p.color = PALETTE[i % PALETTE.length];
+    });
+    if (!s.phases.length) return defaultState();
+    return s;
+  }
+  // Migration from the old fixed deficit/volumen object shape
+  if (s && (s.deficit || s.volumen)) {
+    const phases = [];
+    ['deficit','volumen'].forEach((key, i) => {
+      if (s[key]) {
+        phases.push({
+          id: key,
+          name: s[key].name || (key === 'deficit' ? 'Déficit' : 'Volumen'),
+          rows: Array.isArray(s[key].rows) ? s[key].rows : [],
+          goal: typeof s[key].goal === 'number' ? s[key].goal : 70,
+          tday: typeof s[key].tday === 'number' ? s[key].tday : 1,
+          startDate: s[key].startDate || '',
+          endDate: s[key].endDate || '',
+          hidden: !!s[key].hidden,
+          direction: key === 'deficit' ? 'deficit' : 'superavit',
+          color: PALETTE[i % PALETTE.length]
+        });
+      }
+    });
+    if (phases.length) return { phases };
+  }
+  return defaultState();
+}
+
+function loadCfg() { try { return JSON.parse(localStorage.getItem(CFG)) || {}; } catch(e) { return {}; } }
+function loadState() {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    if (raw) return ensureShape(JSON.parse(raw));
+    const oldRaw = localStorage.getItem('tracker-gym-v2') || localStorage.getItem('tracker-gym-v1');
+    if (oldRaw) return ensureShape(JSON.parse(oldRaw));
+  } catch(e) {}
+  return ensureShape(defaultState());
+}
+function saveState() { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(state)); } catch(e) {} }
+
+let state = loadState();
+
+function getPhase(id) { return state.phases.find(p => p.id === id); }
+
+function setStatus(s, text) {
+  document.getElementById('sdot').className = 'sdot' + (s ? ' ' + s : '');
+  document.getElementById('syncText').textContent = text;
+}
+
+const BASE = 'https://api.jsonbin.io/v3/b/';
+async function pull() {
+  if (!cfg.key || !cfg.bin) { setStatus('', 'Sin configurar'); return; }
+  setStatus('busy', 'Sincronizando…');
+  try {
+    const res = await fetch(BASE + cfg.bin + '/latest', { headers: { 'X-Access-Key': cfg.key } });
+    if (!res.ok) throw new Error(res.status);
+    const json = await res.json();
+    if (json.record) {
+      state = ensureShape(json.record);
+      saveState();
+      if (!state.phases.find(p => p.id === activeTab) && activeTab !== 'general') {
+        activeTab = state.phases.length ? state.phases[0].id : 'general';
+      }
+      buildAllPhaseViews();
+    }
+    setStatus('ok', 'Sincronizado');
+  } catch(e) { setStatus('err', 'Error al leer (revisá key/bin)'); }
+}
+async function push() {
+  if (!cfg.key || !cfg.bin) return;
+  setStatus('busy', 'Guardando en nube…');
+  try {
+    const res = await fetch(BASE + cfg.bin, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Access-Key': cfg.key }, body: JSON.stringify(state) });
+    if (!res.ok) throw new Error(res.status);
+    setStatus('ok', 'Sincronizado');
+  } catch(e) { setStatus('err', 'Error al guardar'); }
+}
+function schedulePush() { if (pushTimer) clearTimeout(pushTimer); pushTimer = setTimeout(push, 1500); }
+function pullNow() { pull(); }
+
+// ---------- Generic modal ----------
+function closeModal() { document.getElementById('modalBg').classList.remove('show'); }
+
+function openConfig() {
+  document.getElementById('modalBody').innerHTML =
+    '<h2>Configurar sincronización</h2>' +
+    '<p>Pegá tu Access Key y Bin ID de JSONBin. Se guardan solo en este navegador, nunca se comparten.</p>' +
+    '<label>Access Key (X-Access-Key)</label>' +
+    '<input type="password" id="cfgKey" placeholder="$2a$10$...">' +
+    '<label>Bin ID</label>' +
+    '<input type="text" id="cfgBin" placeholder="6a31cc4c...">' +
+    '<div class="row">' +
+    '  <button class="btn primary" style="flex:1" id="cfgSaveBtn">Guardar y sincronizar</button>' +
+    '  <button class="btn" id="cfgCancelBtn">Cancelar</button>' +
+    '</div>';
+  document.getElementById('cfgKey').value = cfg.key || '';
+  document.getElementById('cfgBin').value = cfg.bin || '';
+  document.getElementById('cfgSaveBtn').onclick = saveConfig;
+  document.getElementById('cfgCancelBtn').onclick = closeModal;
+  document.getElementById('modalBg').classList.add('show');
+}
+async function saveConfig() {
+  cfg = { key: document.getElementById('cfgKey').value.trim(), bin: document.getElementById('cfgBin').value.trim() };
+  localStorage.setItem(CFG, JSON.stringify(cfg));
+  closeModal();
+  if (!cfg.key || !cfg.bin) { setStatus('', 'Sin configurar'); return; }
+  setStatus('busy', 'Comprobando la nube…');
+  let remote = null;
+  try {
+    const res = await fetch(BASE + cfg.bin + '/latest', { headers: { 'X-Access-Key': cfg.key } });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.record && Array.isArray(json.record.phases) && json.record.phases.length) remote = json.record;
+      else if (json.record && (json.record.deficit || json.record.volumen)) remote = json.record;
+    }
+  } catch(e) {}
+  if (remote) {
+    openSyncChoice(remote);
+  } else {
+    // La nube está vacía (o el bin es nuevo): subimos lo que ya tenés cargado acá.
+    push();
+  }
+}
+
+function summarizeState(s) {
+  if (!s.phases || !s.phases.length) return 'sin fases';
+  return s.phases.map(p => {
+    const filled = p.rows.filter(r => r.bw != null && !isNaN(r.bw));
+    if (!filled.length) return p.name + ': sin datos';
+    const lastDay = filled[filled.length - 1].d;
+    const lastTday = p.tday + (lastDay - 1);
+    return p.name + ': hasta día ' + lastDay + ' (TDay ' + lastTday + ', ' + filled.length + ' registros)';
+  }).join('<br>');
+}
+
+function openSyncChoice(remote) {
+  const remoteNorm = ensureShape(remote);
+  const localSummary = summarizeState(state);
+  const remoteSummary = summarizeState(remoteNorm);
+  document.getElementById('modalBody').innerHTML =
+    '<h2>Ya hay datos en esa nube</h2>' +
+    '<p>Encontramos datos guardados en ese Bin. Compará antes de elegir — la opción equivocada pisa la otra:</p>' +
+    '<p style="font-size:13px;margin-bottom:4px"><b>Este dispositivo:</b><br>' + localSummary + '</p>' +
+    '<p style="font-size:13px;margin-top:12px;margin-bottom:4px"><b>La nube:</b><br>' + remoteSummary + '</p>' +
+    '<div class="row">' +
+    '  <button class="btn" style="flex:1" id="useRemoteBtn">Usar los de la nube</button>' +
+    '</div>' +
+    '<div class="row">' +
+    '  <button class="btn primary" style="flex:1" id="useLocalBtn">Subir lo que tengo acá (pisa la nube)</button>' +
+    '</div>';
+  document.getElementById('useRemoteBtn').onclick = () => {
+    state = remoteNorm;
+    saveState();
+    activeTab = state.phases.length ? state.phases[0].id : 'general';
+    buildAllPhaseViews();
+    closeModal();
+    setStatus('ok', 'Sincronizado');
+  };
+  document.getElementById('useLocalBtn').onclick = () => {
+    closeModal();
+    push();
+  };
+  document.getElementById('modalBg').classList.add('show');
+}
+
+function openAddPhase() {
+  document.getElementById('modalBody').innerHTML =
+    '<h2>Agregar fase nueva</h2>' +
+    '<p>Creá una fase nueva (ej: "Déficit 2", "Volumen 2"). Podés cambiar todo esto después.</p>' +
+    '<label>Nombre</label>' +
+    '<input type="text" id="newPhaseName" value="Nueva fase">' +
+    '<label>Meta</label>' +
+    '<select id="newPhaseDirection">' +
+    '  <option value="superavit">Superávit</option>' +
+    '  <option value="mantenimiento">Mantenimiento</option>' +
+    '  <option value="deficit" selected>Déficit</option>' +
+    '</select>' +
+    '<div class="row">' +
+    '  <button class="btn primary" style="flex:1" id="addPhaseConfirmBtn">Crear fase</button>' +
+    '  <button class="btn" id="addPhaseCancelBtn">Cancelar</button>' +
+    '</div>';
+  document.getElementById('addPhaseConfirmBtn').onclick = confirmAddPhase;
+  document.getElementById('addPhaseCancelBtn').onclick = closeModal;
+  document.getElementById('modalBg').classList.add('show');
+  const nameInput = document.getElementById('newPhaseName');
+  nameInput.focus(); nameInput.select();
+}
+function confirmAddPhase() {
+  const name = document.getElementById('newPhaseName').value.trim() || 'Nueva fase';
+  const direction = document.getElementById('newPhaseDirection').value;
+  let lastTday = 1;
+  if (state.phases.length) {
+    const last = state.phases[state.phases.length - 1];
+    lastTday = last.rows.length ? last.tday + (last.rows[last.rows.length - 1].d - 1) + 1 : last.tday;
+  }
+  const id = 'p_' + Date.now();
+  const color = PALETTE[state.phases.length % PALETTE.length];
+  state.phases.push({
+    id, name, rows: [], goal: 70, tday: lastTday,
+    startDate: '', endDate: '', hidden: false, direction, color
+  });
+  saveState(); schedulePush();
+  closeModal();
+  buildAllPhaseViews();
+  switchTab(id);
+}
+
+function openDeletePhase(id) {
+  const p = getPhase(id);
+  if (!p) return;
+  document.getElementById('modalBody').innerHTML =
+    '<h2>Eliminar fase</h2>' +
+    '<p>¿Seguro que querés eliminar <b>' + p.name + '</b> y todos sus datos? Esta acción no se puede deshacer.</p>' +
+    '<div class="row">' +
+    '  <button class="btn danger" style="flex:1" id="deleteConfirmBtn">Eliminar</button>' +
+    '  <button class="btn" id="deleteCancelBtn">Cancelar</button>' +
+    '</div>';
+  document.getElementById('deleteConfirmBtn').onclick = () => confirmDeletePhase(id);
+  document.getElementById('deleteCancelBtn').onclick = closeModal;
+  document.getElementById('modalBg').classList.add('show');
+}
+function confirmDeletePhase(id) {
+  state.phases = state.phases.filter(ph => ph.id !== id);
+  saveState(); schedulePush();
+  if (activeTab === id) activeTab = state.phases.length ? state.phases[0].id : 'general';
+  closeModal();
+  buildAllPhaseViews();
+}
+
+// ---------- Tabs ----------
+function renderTabs() {
+  const bar = document.getElementById('tabsBar');
+  let html = '';
+  state.phases.forEach(p => {
+    if (p.hidden) {
+      html += '<div class="tab-restore" onclick="showPhase(\'' + p.id + '\')" title="Volver a mostrar">+ ' + p.name + '</div>';
+    } else {
+      html += '<div class="tab' + (activeTab === p.id ? ' active' : '') + '" data-tab="' + p.id + '" onclick="switchTab(\'' + p.id + '\')" ondblclick="hidePhase(\'' + p.id + '\')"><span class="phase-dot" style="background:' + p.color + '"></span>' + p.name + '</div>';
+    }
+  });
+  html += '<div class="tab-add" onclick="openAddPhase()" title="Agregar fase nueva">+</div>';
+  html += '<div class="tab' + (activeTab === 'general' ? ' active' : '') + '" data-tab="general" onclick="switchTab(\'general\')">General</div>';
+  bar.innerHTML = html;
+}
+
+function hidePhase(id) {
+  const p = getPhase(id);
+  if (!p) return;
+  p.hidden = true;
+  saveState(); schedulePush();
+  if (activeTab === id) activeTab = 'general';
+  renderTabs();
+  showActiveView();
+}
+function showPhase(id) {
+  const p = getPhase(id);
+  if (!p) return;
+  p.hidden = false;
+  saveState(); schedulePush();
+  renderTabs();
+  switchTab(id);
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  renderTabs();
+  showActiveView();
+}
+function showActiveView() {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const el = document.getElementById('view-' + activeTab);
+  if (el) el.classList.add('active');
+  if (activeTab === 'general') renderGeneral();
+  else renderChart(activeTab);
+}
+
+// ---------- Building per-phase markup ----------
+function buildPhaseView(id) {
+  const p = getPhase(id);
+  return `
+    <div class="goal-input">
+      <span>Nombre de la fase:</span>
+      <input type="text" id="nameInput-${id}" value="${p.name}" style="width:160px">
+      <span style="margin-left:12px">Meta:</span>
+      <select id="directionInput-${id}">
+        <option value="superavit" ${p.direction==='superavit'?'selected':''}>Superávit</option>
+        <option value="mantenimiento" ${p.direction==='mantenimiento'?'selected':''}>Mantenimiento</option>
+        <option value="deficit" ${p.direction==='deficit'?'selected':''}>Déficit</option>
+      </select>
+    </div>
+    <div class="goal-input">
+      <span>Objetivo:</span>
+      <input type="number" step="0.1" id="goalInput-${id}" value="${p.goal}">
+      <span>kg</span>
+      <span style="margin-left:18px">TDay inicial (Día 1):</span>
+      <input type="number" step="1" id="tdayInput-${id}" value="${p.tday}" style="width:80px">
+      <button class="btn mini" onclick="autoContinue('${id}')">Continuar desde la fase anterior</button>
+    </div>
+    <div class="goal-input">
+      <span>Fecha inicio:</span>
+      <input type="date" id="startDateInput-${id}" value="${p.startDate || ''}" style="width:150px">
+      <span style="margin-left:12px">Fecha fin:</span>
+      <input type="date" id="endDateInput-${id}" value="${p.endDate || ''}" style="width:150px">
+    </div>
+    <div class="metrics" id="metrics-${id}"></div>
+    <div class="goal-banner" id="banner-${id}"></div>
+    <div class="legend">
+      <span class="item"><span class="dot" style="background:var(--blue)"></span>peso diario</span>
+      <span class="item"><span class="dash" style="background:${p.color}"></span>promedio móvil 7d</span>
+      <span class="item"><span class="dash" style="background:var(--amber)"></span>kcal</span>
+    </div>
+    <div class="chart-wrap"><canvas id="chart-${id}"></canvas></div>
+    <div class="section-title">Promedio semanal</div>
+    <table class="weekly-table" id="weeklyTable-${id}"></table>
+    <div class="section-title">Datos</div>
+    <div class="table-scroll">
+      <table class="data">
+        <thead><tr><th class="daycol" style="text-transform:none">TDay</th><th class="daycol" style="text-transform:none">Día</th><th class="daycol" style="text-transform:none">L-D</th><th>Peso (kg)</th><th>Kcal</th><th>Nota</th><th></th></tr></thead>
+        <tbody id="tbody-${id}"></tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button class="btn primary" onclick="addRow('${id}')">+ Agregar día</button>
+      <button class="btn" onclick="exportData('${id}')">Exportar JSON</button>
+      <button class="btn" onclick="importData('${id}')">Importar JSON</button>
+      <button class="btn danger" onclick="openDeletePhase('${id}')">Eliminar fase</button>
+    </div>
+    <p class="hint">${p.direction==='mantenimiento' ? 'En modo mantenimiento no se resalta ningún día en particular.' : 'Resaltado en la tabla = nuevo ' + (p.direction==='deficit'?'mínimo':'máximo') + '.'} Los cambios suben a la nube ~1.5s después de escribir.</p>
+  `;
+}
+
+function buildAllPhaseViews() {
+  Object.keys(charts).forEach(id => {
+    if (id === 'general') return;
+    try { charts[id].destroy(); } catch(e) {}
+    delete charts[id];
+  });
+  const container = document.getElementById('phaseViews');
+  container.innerHTML = state.phases.map(p => '<div class="view" id="view-' + p.id + '">' + buildPhaseView(p.id) + '</div>').join('');
+  state.phases.forEach(p => bindPhaseInputs(p.id));
+  renderTabs();
+  state.phases.forEach(p => renderPhase(p.id));
+  showActiveView();
+}
+
+function autoContinue(id) {
+  const idx = state.phases.findIndex(p => p.id === id);
+  if (idx <= 0) return;
+  const prev = state.phases[idx - 1];
+  if (!prev.rows.length) return;
+  const lastTday = prev.tday + (prev.rows[prev.rows.length - 1].d - 1);
+  const p = getPhase(id);
+  p.tday = lastTday + 1;
+  document.getElementById('tdayInput-' + id).value = p.tday;
+  saveState(); renderTable(id); schedulePush();
+}
+
+// ---------- Per-phase logic ----------
+function filledPoints(id) { const p = getPhase(id); return p.rows.filter(r => r.bw != null && !isNaN(r.bw)).map(r => ({x: r.d, y: r.bw})); }
+function kcalPoints(id) { const p = getPhase(id); return p.rows.filter(r => r.kcal != null && !isNaN(r.kcal)).map(r => ({x: r.d, y: r.kcal})); }
+function movingAvg(pts, win) {
+  return pts.map((pt, i) => {
+    const slice = pts.slice(Math.max(0, i - win + 1), i + 1);
+    return {x: pt.x, y: Math.round(slice.reduce((s,p)=>s+p.y,0)/slice.length*100)/100};
+  });
+}
+
+function computeExtremeDays(id) {
+  const p = getPhase(id);
+  const set = new Set();
+  if (p.direction === 'mantenimiento') return set;
+  let running = p.direction === 'deficit' ? Infinity : -Infinity;
+  p.rows.forEach(r => {
+    if (r.bw != null && !isNaN(r.bw)) {
+      if ((p.direction === 'deficit' && r.bw < running) || (p.direction === 'superavit' && r.bw > running)) {
+        running = r.bw; set.add(r.d);
+      }
+    }
+  });
+  return set;
+}
+
+function renderMetrics(id) {
+  const p = getPhase(id);
+  const pts = filledPoints(id);
+  const m = document.getElementById('metrics-' + id);
+  const bannerEl = document.getElementById('banner-' + id);
+  if (!m || !bannerEl) return;
+  if (!pts.length) { m.innerHTML = ''; bannerEl.innerHTML = ''; return; }
+  const first = pts[0].y, last = pts[pts.length-1].y, diff = last - first;
+  const lastDay = pts[pts.length-1].x, firstDay = pts[0].x;
+  const perWeek = diff / Math.max((lastDay - firstDay) / 7, 0.1);
+  const card = (l,v,s) => '<div class="metric"><div class="label">'+l+'</div><div class="value">'+v+'</div><div class="vsub">'+s+'</div></div>';
+  const goal = p.goal;
+  const tagStyle = 'background:' + p.color + ';color:#0b0b0a';
+
+  if (p.direction === 'mantenimiento') {
+    const avgAll = pts.reduce((s,pt)=>s+pt.y,0)/pts.length;
+    m.innerHTML =
+      card('Peso actual', last.toFixed(1)+' kg', 'Día '+lastDay) +
+      card('Promedio', avgAll.toFixed(1)+' kg', 'de todo el período') +
+      card('Desvío vs objetivo', (last-goal>=0?'+':'')+(last-goal).toFixed(1)+' kg', 'objetivo '+goal.toFixed(1)+' kg') +
+      card('Por semana', (perWeek>=0?'+':'')+perWeek.toFixed(2)+' kg', 'ritmo actual');
+    const dev = Math.abs(last - goal);
+    if (dev <= 0.5) {
+      bannerEl.innerHTML = '<span class="tag" style="'+tagStyle+'">Estable</span> Estás manteniendo cerca de tu objetivo de ' + goal.toFixed(1) + ' kg.';
+    } else {
+      bannerEl.innerHTML = '<span class="tag" style="'+tagStyle+'">Desvío</span> Estás a ' + dev.toFixed(1) + ' kg de tu objetivo de mantenimiento (' + goal.toFixed(1) + ' kg).';
+    }
+    return;
+  }
+
+  const goingDown = p.direction === 'deficit';
+  const extreme = goingDown ? Math.min(...pts.map(pt => pt.y)) : Math.max(...pts.map(pt => pt.y));
+  const extremeLabel = goingDown ? 'Mínimo' : 'Máximo';
+  m.innerHTML =
+    card('Peso actual', last.toFixed(1)+' kg', 'Día '+lastDay) +
+    card(extremeLabel, extreme.toFixed(1)+' kg', goingDown ? 'el más bajo' : 'el más alto') +
+    card('Cambio total', (diff>=0?'+':'')+diff.toFixed(1)+' kg', 'desde '+first.toFixed(1)+' kg') +
+    card('Por semana', (perWeek>=0?'+':'')+perWeek.toFixed(2)+' kg', 'ritmo actual');
+
+  const remaining = goingDown ? (last - goal) : (goal - last);
+  if (remaining <= 0) {
+    bannerEl.innerHTML = '<span class="tag" style="' + tagStyle + '">Objetivo</span> Llegaste a ' + goal.toFixed(1) + ' kg. Objetivo cumplido.';
+  } else {
+    const recentPts = pts.slice(-21);
+    let recentRate = perWeek;
+    if (recentPts.length >= 2) {
+      const rFirst = recentPts[0], rLast = recentPts[recentPts.length-1];
+      const rWeeks = Math.max((rLast.x - rFirst.x) / 7, 0.1);
+      recentRate = (rLast.y - rFirst.y) / rWeeks;
+    }
+    const onTrack = goingDown ? recentRate < -0.01 : recentRate > 0.01;
+    if (onTrack) {
+      const weeksLeft = remaining / Math.abs(recentRate);
+      bannerEl.innerHTML = '<span class="tag" style="' + tagStyle + '">Proyección</span> Faltan ' + remaining.toFixed(1) + ' kg para ' + goal.toFixed(1) + ' kg. A tu ritmo reciente (' + recentRate.toFixed(2) + ' kg/sem) llegás en ~' + Math.ceil(weeksLeft) + ' semanas.';
+    } else {
+      bannerEl.innerHTML = '<span class="tag" style="' + tagStyle + '">Proyección</span> Faltan ' + remaining.toFixed(1) + ' kg para ' + goal.toFixed(1) + ' kg. El ritmo reciente está estancado — ajustá ' + (goingDown ? 'déficit' : 'superávit') + ' para reactivar.';
+    }
+  }
+}
+
+function renderWeekly(id) {
+  const p = getPhase(id);
+  const t = document.getElementById('weeklyTable-' + id);
+  if (!t) return;
+  const weeks = {};
+  p.rows.forEach(r => {
+    const wk = Math.ceil(r.d / 7);
+    if (!weeks[wk]) weeks[wk] = { bw: [], kcal: [] };
+    if (r.bw != null && !isNaN(r.bw)) weeks[wk].bw.push(r.bw);
+    if (r.kcal != null && !isNaN(r.kcal)) weeks[wk].kcal.push(r.kcal);
+  });
+  let html = '<thead><tr><th>Semana</th><th>BW prom</th><th>Δ vs anterior</th><th>Kcal prom</th></tr></thead><tbody>';
+  let prevAvg = null;
+  Object.keys(weeks).map(Number).sort((a,b)=>a-b).forEach(wk => {
+    const w = weeks[wk];
+    if (!w.bw.length) return;
+    const avg = w.bw.reduce((s,v)=>s+v,0)/w.bw.length;
+    const kavg = w.kcal.length ? Math.round(w.kcal.reduce((s,v)=>s+v,0)/w.kcal.length) : '—';
+    let delta = '—', cls = '';
+    if (prevAvg != null) {
+      const d = avg - prevAvg;
+      cls = d < 0 ? 'down' : (d > 0 ? 'up' : '');
+      delta = (d>=0?'+':'') + d.toFixed(2) + ' kg';
+    }
+    html += '<tr><td>S'+wk+'</td><td>'+avg.toFixed(2)+' kg</td><td class="'+cls+'">'+delta+'</td><td>'+(kavg==='—'?'—':kavg+' kcal')+'</td></tr>';
+    prevAvg = avg;
+  });
+  html += '</tbody>';
+  t.innerHTML = html;
+}
+
+function renderChart(id) {
+  const p = getPhase(id);
+  const pts = filledPoints(id), mavg = movingAvg(pts, 7), kcal = kcalPoints(id);
+  const canvas = document.getElementById('chart-' + id);
+  if (!canvas) return;
+  const cfgC = {
+    type: 'scatter',
+    data: { datasets: [
+      { label:'Peso diario', data:pts, backgroundColor:'#378ADD', pointRadius:4, pointHoverRadius:6, showLine:false, order:3, yAxisID:'y' },
+      { label:'Promedio 7d', data:mavg, borderColor:p.color, backgroundColor:'transparent', pointRadius:0, showLine:true, borderWidth:2, tension:0.3, order:2, yAxisID:'y' },
+      { label:'Kcal', data:kcal, borderColor:'rgba(239,159,39,0.55)', backgroundColor:'transparent', pointRadius:0, showLine:true, borderWidth:1.5, tension:0.3, order:1, yAxisID:'y1', borderDash:[5,4] }
+    ]},
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=> c.dataset.label==='Kcal' ? 'Kcal: '+Math.round(c.parsed.y) : c.dataset.label+': '+c.parsed.y.toFixed(1)+' kg'}} },
+      scales:{
+        x:{ type:'linear', title:{display:true,text:'día',color:'#8a8a85'}, ticks:{color:'#8a8a85'}, grid:{color:'rgba(136,135,128,0.15)'} },
+        y:{ position:'left', ticks:{color:'#8a8a85', callback:v=>v.toFixed(1)+' kg'}, grid:{color:'rgba(136,135,128,0.15)'} },
+        y1:{ position:'right', ticks:{color:'rgba(239,159,39,0.7)', callback:v=>Math.round(v)}, grid:{drawOnChartArea:false} }
+      }
+    }
+  };
+  if (charts[id]) { charts[id].data = cfgC.data; charts[id].resize(); charts[id].update(); }
+  else charts[id] = new Chart(canvas, cfgC);
+}
+
+function renderTable(id) {
+  const p = getPhase(id);
+  const tb = document.getElementById('tbody-' + id);
+  if (!tb) return;
+  const extremes = computeExtremeDays(id);
+  const tdayStart = p.tday;
+  tb.innerHTML = '';
+  p.rows.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    const isExtreme = extremes.has(r.d);
+    if (isExtreme) tr.className = 'is-extreme';
+    const tday = tdayStart + (r.d - 1);
+    const dow = DOW[((r.d - 1) % 7 + 7) % 7];
+    tr.innerHTML =
+      '<td class="daycol">' + tday + '</td>' +
+      '<td class="daycol">' + r.d + (isExtreme ? '<span class="star">★</span>' : '') + '</td>' +
+      '<td class="daycol" style="color:var(--text-dim)">' + dow + '</td>' +
+      '<td><input type="number" step="0.1" value="' + (r.bw ?? '') + '" data-i="' + i + '" data-k="bw" placeholder="—"></td>' +
+      '<td><input type="number" step="10" value="' + (r.kcal ?? '') + '" data-i="' + i + '" data-k="kcal" placeholder="—"></td>' +
+      '<td><input type="text" value="' + (r.note ?? '').replace(/"/g,'&quot;') + '" data-i="' + i + '" data-k="note"></td>' +
+      '<td class="delcol"><button class="del" data-del="' + i + '" title="Borrar">×</button></td>';
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const i = +inp.dataset.i, k = inp.dataset.k;
+      if (k === 'bw' || k === 'kcal') p.rows[i][k] = inp.value === '' ? null : parseFloat(inp.value);
+      else p.rows[i][k] = inp.value;
+      saveState(); renderChart(id); renderMetrics(id); renderWeekly(id); schedulePush();
+    });
+    inp.addEventListener('blur', () => { if (inp.dataset.k === 'bw') renderTable(id); });
+  });
+  tb.querySelectorAll('.del').forEach(b => {
+    b.addEventListener('click', () => {
+      p.rows.splice(+b.dataset.del, 1);
+      saveState(); renderPhase(id); schedulePush();
+    });
+  });
+}
+
+function addRow(id) {
+  const p = getPhase(id);
+  const lastDay = p.rows.length ? p.rows[p.rows.length-1].d : 0;
+  p.rows.push({d: lastDay + 1, bw: null, kcal: null, note: ''});
+  saveState(); renderPhase(id); schedulePush();
+  const container = document.getElementById('view-' + id);
+  const scroll = container.querySelector('.table-scroll');
+  scroll.scrollTop = scroll.scrollHeight;
+}
+
+function exportData(id) {
+  const p = getPhase(id);
+  const blob = new Blob([JSON.stringify(p.rows,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'tracker-' + p.name.toLowerCase().replace(/\s+/g,'-') + '.json'; a.click();
+}
+function importData(id) {
+  const p = getPhase(id);
+  const inp = document.createElement('input');
+  inp.type='file'; inp.accept='.json';
+  inp.onchange = e => {
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = () => { try { p.rows = JSON.parse(r.result); saveState(); renderPhase(id); schedulePush(); } catch(err){ toast('Archivo inválido'); } };
+    r.readAsText(f);
+  };
+  inp.click();
+}
+
+function renderPhase(id) {
+  renderTable(id); renderMetrics(id); renderWeekly(id);
+  const el = document.getElementById('view-' + id);
+  if (el && el.classList.contains('active')) renderChart(id);
+}
+
+function bindPhaseInputs(id) {
+  const p = getPhase(id);
+  document.getElementById('goalInput-' + id).addEventListener('input', e => {
+    p.goal = parseFloat(e.target.value) || p.goal;
+    saveState(); renderMetrics(id); schedulePush();
+  });
+  document.getElementById('tdayInput-' + id).addEventListener('input', e => {
+    p.tday = parseInt(e.target.value) || p.tday;
+    saveState(); renderTable(id); schedulePush();
+  });
+  document.getElementById('nameInput-' + id).addEventListener('input', e => {
+    p.name = e.target.value || 'Fase';
+    saveState(); renderTabs(); schedulePush();
+  });
+  document.getElementById('directionInput-' + id).addEventListener('change', e => {
+    p.direction = normalizeDirection(e.target.value);
+    saveState(); renderTable(id); renderMetrics(id); schedulePush();
+  });
+  document.getElementById('startDateInput-' + id).addEventListener('input', e => {
+    p.startDate = e.target.value;
+    saveState(); schedulePush();
+  });
+  document.getElementById('endDateInput-' + id).addEventListener('input', e => {
+    p.endDate = e.target.value;
+    saveState(); schedulePush();
+  });
+}
+
+// ---------- General (overall) view ----------
+function absPoints(id) {
+  const p = getPhase(id);
+  return p.rows.filter(r => r.bw != null && !isNaN(r.bw)).map(r => ({x: p.tday + (r.d - 1), y: r.bw}));
+}
+
+function renderGeneral() {
+  const legendEl = document.getElementById('legend-general');
+  legendEl.innerHTML = state.phases.map(p => '<span class="item"><span class="dot" style="background:' + p.color + '"></span>' + p.name.toLowerCase() + '</span>').join('');
+
+  const perPhasePts = state.phases.map(p => ({ p, pts: absPoints(p.id) }));
+  const all = perPhasePts.flatMap(x => x.pts).sort((a,b) => a.x - b.x);
+  const m = document.getElementById('metrics-general');
+  const banner = document.getElementById('banner-general');
+
+  if (!all.length) { m.innerHTML = ''; banner.innerHTML = ''; }
+  else {
+    const first = all[0], last = all[all.length-1];
+    const diff = last.y - first.y;
+    const totalDays = last.x - first.x + 1;
+    const currentPhase = perPhasePts.filter(x => x.pts.length).sort((a,b) => b.pts[b.pts.length-1].x - a.pts[a.pts.length-1].x)[0];
+    const card = (l,v,s) => '<div class="metric"><div class="label">'+l+'</div><div class="value">'+v+'</div><div class="vsub">'+s+'</div></div>';
+    m.innerHTML =
+      card('Peso actual', last.y.toFixed(1)+' kg', 'TDay '+last.x) +
+      card('Peso inicial', first.y.toFixed(1)+' kg', 'TDay '+first.x) +
+      card('Cambio total', (diff>=0?'+':'')+diff.toFixed(1)+' kg', totalDays+' días trackeados') +
+      card('Fase actual', currentPhase ? currentPhase.p.name : '—', 'último registro');
+
+    const withData = perPhasePts.filter(x => x.pts.length).map(x => ({ name: x.p.name, first: x.pts[0].x, last: x.pts[x.pts.length-1].x })).sort((a,b) => a.first - b.first);
+    if (withData.length >= 2) {
+      banner.innerHTML = '<span class="tag" style="background:var(--teal);color:#04342C">Recorrido</span> ' + withData.map(w => w.name + ' (TDay ' + w.first + '–' + w.last + ')').join(' → ');
+    } else {
+      banner.innerHTML = '<span class="tag" style="background:var(--teal);color:#04342C">Info</span> Todavía tenés datos de una sola fase. Cuando cargues otra, acá vas a ver el recorrido completo.';
+    }
+  }
+
+  const datasets = state.phases.map(p => {
+    const pts = absPoints(p.id);
+    return { label: p.name, data: pts, backgroundColor: p.color, borderColor: p.color, pointRadius: 4, showLine: true, borderWidth: 2, tension: 0.2 };
+  });
+  const cfgC = {
+    type: 'scatter',
+    data: { datasets },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=> c.dataset.label+': '+c.parsed.y.toFixed(1)+' kg (TDay '+c.parsed.x+')'}} },
+      scales:{
+        x:{ type:'linear', title:{display:true,text:'TDay',color:'#8a8a85'}, ticks:{color:'#8a8a85'}, grid:{color:'rgba(136,135,128,0.15)'} },
+        y:{ position:'left', ticks:{color:'#8a8a85', callback:v=>v.toFixed(1)+' kg'}, grid:{color:'rgba(136,135,128,0.15)'} }
+      }
+    }
+  };
+  if (charts.general) { charts.general.data = cfgC.data; charts.general.update(); }
+  else charts.general = new Chart(document.getElementById('chart-general'), cfgC);
+
+  const t = document.getElementById('weeklyTable-general');
+  const entries = [];
+  state.phases.forEach(p => {
+    p.rows.forEach(r => {
+      const hasBw = r.bw != null && !isNaN(r.bw);
+      const hasKcal = r.kcal != null && !isNaN(r.kcal);
+      if (!hasBw && !hasKcal) return;
+      entries.push({ abs: p.tday + (r.d - 1), bw: hasBw ? r.bw : null, kcal: hasKcal ? r.kcal : null, phaseName: p.name });
+    });
+  });
+  if (!entries.length) { t.innerHTML = ''; return; }
+  const firstAbs = Math.min(...entries.map(e => e.abs));
+  const weeks = {};
+  entries.forEach(e => {
+    const wk = Math.floor((e.abs - firstAbs) / 7) + 1;
+    if (!weeks[wk]) weeks[wk] = { bw: [], kcal: [], phaseName: e.phaseName };
+    if (e.bw != null) weeks[wk].bw.push(e.bw);
+    if (e.kcal != null) weeks[wk].kcal.push(e.kcal);
+    weeks[wk].phaseName = e.phaseName;
+  });
+  let html = '<thead><tr><th>Semana</th><th>Fase</th><th>BW prom</th><th>Δ vs anterior</th><th>Kcal prom</th></tr></thead><tbody>';
+  let prevAvg = null;
+  Object.keys(weeks).map(Number).sort((a,b)=>a-b).forEach(wk => {
+    const w = weeks[wk];
+    const hasBw = w.bw.length > 0;
+    const avg = hasBw ? w.bw.reduce((s,v)=>s+v,0)/w.bw.length : null;
+    const kavg = w.kcal.length ? Math.round(w.kcal.reduce((s,v)=>s+v,0)/w.kcal.length) : '—';
+    let delta = '—', cls = '';
+    if (hasBw && prevAvg != null) {
+      const d = avg - prevAvg;
+      cls = d < 0 ? 'down' : (d > 0 ? 'up' : '');
+      delta = (d>=0?'+':'') + d.toFixed(2) + ' kg';
+    }
+    html += '<tr><td>S'+wk+'</td><td>'+w.phaseName+'</td><td>'+(hasBw?avg.toFixed(2)+' kg':'—')+'</td><td class="'+cls+'">'+delta+'</td><td>'+(kavg==='—'?'—':kavg+' kcal')+'</td></tr>';
+    if (hasBw) prevAvg = avg;
+  });
+  html += '</tbody>';
+  t.innerHTML = html;
+}
+
+// ---------- Init ----------
+activeTab = state.phases.length ? state.phases[0].id : 'general';
+buildAllPhaseViews();
+
+if (cfg.key && cfg.bin) pull();
+else setStatus('', 'Sin configurar — tocá "Configurar nube"');
+</script>
+</body>
+</html>
